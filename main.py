@@ -2,8 +2,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchsummary import summary
+import math
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def initialize_weights(module):
+    if isinstance(module, nn.Conv2d):
+        n = module.kernel_size[0] * module.kernel_size[1] * module.in_channels
+        module.weight.data.normal_(0, math.sqrt(2. / n))
+        if module.bias is not None:
+            module.bias.data.zero_()
+    elif isinstance(module, nn.ConvTranspose2d):
+        n = module.kernel_size[0] * module.kernel_size[1] * module.out_channels
+        module.weight.data.normal_(0, math.sqrt(2. / n))
+        if module.bias is not None:
+            module.bias.data.zero_()
 
 
 class DoubleConv(nn.Module):
@@ -16,6 +30,8 @@ class DoubleConv(nn.Module):
             nn.Conv2d(out_channels, out_channels, kernel_size=3),
             nn.ReLU(inplace=True),
         )
+
+        self.network.apply(initialize_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.network(x)
@@ -39,8 +55,10 @@ class UpBlock(nn.Module):
     def __init__(self, in_channels:int, out_channels: int) -> None:
         super().__init__()
 
-        self.up_conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
-        self.double_conv = DoubleConv(out_channels * 2, out_channels)
+        self.up_conv = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
+        self.double_conv = DoubleConv(in_channels, out_channels)
+
+        self.up_conv.apply(initialize_weights)
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
         x = self.up_conv(x)
@@ -79,6 +97,7 @@ class UNET(nn.Module):
 
         self.conv_out = nn.Conv2d(64, 2, kernel_size=1)
 
+        self.conv_out.apply(initialize_weights)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x, x1 = self.down_block1(x)
@@ -96,7 +115,7 @@ class UNET(nn.Module):
         x = self.conv_out(x)
 
         return x
-    
+
 
 unet = UNET().to(device)
 
