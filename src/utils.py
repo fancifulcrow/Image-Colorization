@@ -9,7 +9,7 @@ def count_parameters(model: torch.nn.Module) -> int:
 
 
 def rgb_to_lab(rgb_img: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:    
-    # Convert RGB to L*a*b
+    # Convert RGB to *L*a*b
     lab_imgs = K.rgb_to_lab(rgb_img)
     
     # Split channels and normalize
@@ -22,7 +22,7 @@ def rgb_to_lab(rgb_img: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 def lab_to_rgb(l_channel: torch.Tensor, ab_channels: torch.Tensor) -> torch.Tensor:
     # Denormalize L channel from [0, 1] to [0, 100]
     l_channel = l_channel * 100.0
-    # Denormalize a*b channels from [-1, 1] to [-128, 127]
+    # Denormalize ab channels from [-1, 1] to [-128, 127]
     ab_channels = ab_channels * 128.0
     
     # Combine channels
