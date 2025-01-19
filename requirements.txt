@@ -1,0 +1,7 @@
+kornia
+matplotlib
+numpy
+pyyaml
+torch
+torchvision
+tqdm
