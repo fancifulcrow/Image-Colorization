@@ -12,79 +12,70 @@ from src.utils import count_parameters, rgb_to_lab, lab_to_rgb
 
 
 def train(model, discriminator, train_loader, optimizer_g, optimizer_d, device, num_epochs: int) -> None:
-    model.train()
-    discriminator.train()
-
-    # Use BCEWithLogitsLoss for adversarial loss, L1Loss for colorization
-    criterion_d = nn.BCEWithLogitsLoss()
-    criterion_g = nn.L1Loss()
-
+    # Loss Functions
+    l1_loss = nn.L1Loss()
+    bce_loss = nn.BCEWithLogitsLoss()
+    
+    # Constants for loss weights
+    lambda_l1 = 100.0  # Weight for L1 loss
+    lambda_fm = 10.0   # Weight for feature matching loss
+    
+    
     for epoch in range(num_epochs):
-        running_loss_g = 0.0
-        running_loss_d = 0.0
-
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
+        
+        running_d_loss = 0.0
+        running_g_loss = 0.0
+        
+        for batch_idx, (images, _) in enumerate(pbar):
+            images = images.to(device)
 
-        for batch_idx, (data, _) in enumerate(pbar):
-            # Convert RGB data to Lab format
-            l_channel, ab_channels = rgb_to_lab(data)
-            l_channel, ab_channels = l_channel.to(device), ab_channels.to(device)
-
-            # Combine L and ab channels for the discriminator input
-            real_lab = torch.cat((l_channel, ab_channels), dim=1)
-
-            ## Discriminator training
-            optimizer_d.zero_grad()
-
-            # Real images (ground truth Lab)
-            real_output = discriminator(real_lab)
-            real_labels = torch.ones(real_output.shape).to(device)
-
-            # Generate fake ab channels using the generator
+            l_channel, real_ab = rgb_to_lab(images)
+            
+            # Train Discriminator
             with torch.no_grad():
-                fake_ab = model(l_channel)
+                test_output = discriminator(images)
+
+            real_labels = torch.ones(test_output.shape, device=device)
+            fake_labels = torch.zeros(test_output.shape, device=device)
             
-            # Combine L channel with generated ab for discriminator
-            fake_lab = torch.cat((l_channel, fake_ab), dim=1)
-            fake_output = discriminator(fake_lab)
-            fake_labels = torch.zeros(fake_output.shape).to(device)
-
-            # Discriminator loss
-            loss_d_real = criterion_d(real_output, real_labels)
-            loss_d_fake = criterion_d(fake_output, fake_labels)
-            loss_d = (loss_d_real + loss_d_fake) / 2
-
-            loss_d.backward()
-            optimizer_d.step()
-
-            ## Generator training
-            optimizer_g.zero_grad()
-
-            # Generate fake ab channels again for the generator loss
+            optimizer_d.zero_grad()
+            
+            real_rgb = images
+            real_disc_output = discriminator(real_rgb)
+            d_real_loss = bce_loss(real_disc_output, real_labels)
+            
             fake_ab = model(l_channel)
-            fake_lab = torch.cat((l_channel, fake_ab), dim=1)
-            fake_output = discriminator(fake_lab)
-
-            # Generator loss
-            loss_colorization = criterion_g(fake_ab, ab_channels)
-            loss_adversarial = criterion_d(fake_output, real_labels)
-            loss_g = loss_adversarial + 10 * loss_colorization
-
-            loss_g.backward()
+            fake_rgb = lab_to_rgb(l_channel, fake_ab.tanh())
+            fake_disc_output = discriminator(fake_rgb.detach())
+            d_fake_loss = bce_loss(fake_disc_output, fake_labels)
+            
+            d_loss = (d_real_loss + d_fake_loss) * 0.5
+            d_loss.backward()
+            optimizer_d.step()
+            
+            # Train Generator
+            optimizer_g.zero_grad()
+            
+            fake_disc_output = discriminator(fake_rgb)
+            g_gan_loss = bce_loss(fake_disc_output, real_labels)
+            
+            g_l1_loss = l1_loss(fake_ab, real_ab) * lambda_l1
+            
+            g_loss = g_gan_loss + g_l1_loss
+            g_loss.backward()
             optimizer_g.step()
-
-            # Track losses
-            running_loss_g += loss_g.item()
-            running_loss_d += loss_d.item()
-
-            # Update progress bar
+            
+            # Progress bar
+            running_d_loss += d_loss.item()
+            running_g_loss += g_loss.item()
+            
             pbar.set_postfix({
-                'loss_g': f'{(running_loss_g / (batch_idx + 1)):.4f}',
-                'loss_d': f'{(running_loss_d / (batch_idx + 1)):.4f}'
+                'D_loss': f'{running_d_loss / (batch_idx + 1):.4f}',
+                'G_loss': f'{running_g_loss / (batch_idx + 1):.4f}'
             })
-
-            
-            
+     
+ 
 def visualize_results(model, data_loader, device, num_images: int = 5) -> None:
     model.eval()
     plt.figure(figsize=(9, 7.5))
@@ -157,8 +148,11 @@ test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = UNET(1, 2).to(device)
 discriminator = PatchDiscriminator(3).to(device)
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
-d_optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+optimizer = optim.Adam(model.parameters(), lr=1e-3, betas=(0.5, 0.999))
+d_optimizer = optim.Adam(discriminator.parameters(), lr=1e-3, betas=(0.5, 0.999))
+
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
 num_epochs = 10
 

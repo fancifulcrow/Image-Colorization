@@ -4,6 +4,14 @@ import torch.nn.functional as F
 from typing import Tuple
 
 
+def init_weights(m: torch.nn.Module) -> None:
+    if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+
 class DoubleConv(nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
@@ -11,10 +19,10 @@ class DoubleConv(nn.Module):
         self.network = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
             nn.GroupNorm(num_groups=8, num_channels=out_channels),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
             nn.GroupNorm(num_groups=8, num_channels=out_channels),
-            nn.LeakyReLU(0.2, inplace=True),
+            nn.LeakyReLU(inplace=True),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -41,6 +49,7 @@ class UpBlock(nn.Module):
 
         self.up_conv = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
         self.double_conv = DoubleConv(in_channels, out_channels)
+        self.dropout = nn.Dropout(0.2)
 
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
@@ -50,6 +59,7 @@ class UpBlock(nn.Module):
         x = torch.cat([skip, x], dim=1)
 
         x = self.double_conv(x)
+        x = self.dropout(x)
 
         return x
     
@@ -70,19 +80,7 @@ class UNET(nn.Module):
 
         self.conv_out = nn.Conv2d(64, out_channels, kernel_size=1, stride=1)
 
-        self.apply(self.init_weights)
-
-    def init_weights(self, module: nn.Module) -> None:
-        if isinstance(module, nn.Conv2d):
-            nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='leaky_relu')
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.BatchNorm2d):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.GroupNorm):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
+        self.apply(init_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x, skip1 = self.down_block1(x)
@@ -119,18 +117,28 @@ class DBlock(nn.Module):
 
 
 class PatchDiscriminator(nn.Module):
-    def __init__(self, in_channels: int) -> None:
+    def __init__(self, input_c):
         super().__init__()
-
-        self.network = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-    
-            DBlock(64, 128),
-            DBlock(128, 256),
-
-            nn.Conv2d(256, 1, kernel_size=3, stride=1, padding=1),
+        self.model = nn.Sequential(
+            # First layer without normalization
+            nn.Conv2d(input_c, 64, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2, True),
+            
+            # Second layer (64 -> 128)
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, True),
+            
+            # Third layer (128 -> 256) with stride=1
+            nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, True),
+            
+            # Final layer without normalization or activation
+            nn.Conv2d(256, 1, kernel_size=4, stride=1, padding=1)
         )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return F.sigmoid(self.network(x))
+
+        self.apply(init_weights)
+        
+    def forward(self, x):
+        return self.model(x)
