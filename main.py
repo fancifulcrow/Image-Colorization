@@ -1,28 +1,46 @@
-def train(model, data_loader, optimizer, device, num_epochs):
-    model.train()
+import torch
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
-    criterion = nn.MSELoss()
+from src.model import UNET, PatchDiscriminator
+from src.utils import load_config
+from src.train import train
+from src.visualize import visualize
 
-    for epoch in range(num_epochs):
-        running_loss = 0.0
 
-        pbar = tqdm(data_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
+if __name__ == "__main__":
+    config_path = "config/default.yaml"
+    config = load_config(config_path=config_path)
 
-        for batch_idx, (data, _) in enumerate(pbar):
-            l_channel, ab_channels = rgb_to_lab(data)
-            l_channel, ab_channels = l_channel.to(device), ab_channels.to(device)
+    assert config["data"]["image_size"] % 8 == 0, "The image size must be divisible by 8"
 
-            optimizer.zero_grad()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            ab_pred = model(l_channel)
+    unet = UNET(1, 2).to(device)
+    discriminator = PatchDiscriminator(3).to(device)
 
-            loss = criterion(ab_pred, ab_channels)
+    optimizer_g = optim.Adam(unet.parameters(), lr=config["training"]["learning_rate"], betas=(0.5, 0.999))
+    optimizer_d = optim.Adam(discriminator.parameters(), lr=config["training"]["learning_rate"], betas=(0.5, 0.999))
 
-            loss.backward()
-            optimizer.step()
+    transform = transforms.Compose([
+        transforms.Resize((config["data"]["image_size"], config["data"]["image_size"])),
+        transforms.ToTensor(),
+    ])
 
-            running_loss += loss.item()
+    train_dataset = datasets.Flowers102(root='./data', split="train", download=True, transform=transform)
+    test_dataset = datasets.Flowers102(root='./data', split="test", download=True, transform=transform)
 
-            pbar.set_postfix({
-                "loss": f"{(running_loss / (batch_idx + 1)):.4f}"
-            })
+    # Strip Labels
+    train_dataset = [(img) for img, _ in train_dataset]
+    test_dataset = [(img) for img, _ in test_dataset]
+
+    train_loader = DataLoader(train_dataset, batch_size=config["data"]["batch_size"], shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+
+    num_epochs = config["training"]["num_epochs"]
+
+    train(unet, discriminator, train_loader, num_epochs, optimizer_g, optimizer_d, device)
+
+    print("\nGenerating visualizations...")
+    visualize(unet, test_loader, device)

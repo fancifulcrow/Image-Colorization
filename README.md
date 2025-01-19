@@ -1,5 +1,7 @@
 ## References
 
+I. J. Goodfellow et al., (2014). [*Generative Adversarial Networks*](https://arxiv.org/pdf/1406.2661)
+
 O. Ronneberger, P. Fischer, & T. Brox, (2015). [*U-Net: Convolutional Networks for Biomedical Image Segmentation.*](https://arxiv.org/abs/1505.04597)
 
 

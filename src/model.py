@@ -18,10 +18,10 @@ class DoubleConv(nn.Module):
 
         self.network = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=out_channels),
+            nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(inplace=True),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=out_channels),
+            nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(inplace=True),
         )
 
@@ -44,12 +44,12 @@ class DownBlock(nn.Module):
     
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels:int, out_channels: int) -> None:
+    def __init__(self, in_channels:int, out_channels: int, dropout_rate: float = 0.1) -> None:
         super().__init__()
 
         self.up_conv = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
         self.double_conv = DoubleConv(in_channels, out_channels)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(dropout_rate)
 
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
@@ -62,7 +62,7 @@ class UpBlock(nn.Module):
         x = self.dropout(x)
 
         return x
-    
+
 
 class UNET(nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
@@ -99,46 +99,26 @@ class UNET(nn.Module):
         return x
 
 
-class DBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int) -> None:
+class PatchDiscriminator(nn.Module):
+    def __init__(self, in_channels: int) -> None:
         super().__init__()
 
         self.network = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=out_channels),
+            nn.Conv2d(in_channels, 64, kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-            nn.GroupNorm(num_groups=8, num_channels=out_channels),
-            nn.LeakyReLU(inplace=True)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
-
-
-class PatchDiscriminator(nn.Module):
-    def __init__(self, input_c):
-        super().__init__()
-        self.model = nn.Sequential(
-            # First layer without normalization
-            nn.Conv2d(input_c, 64, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.2, True),
             
-            # Second layer (64 -> 128)
             nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(128),
-            nn.LeakyReLU(0.2, True),
+            nn.LeakyReLU(inplace=True),
             
-            # Third layer (128 -> 256) with stride=1
-            nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=1, bias=False),
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, True),
-            
-            # Final layer without normalization or activation
-            nn.Conv2d(256, 1, kernel_size=4, stride=1, padding=1)
+            nn.LeakyReLU(inplace=True),
+
+            nn.Conv2d(256, 1, kernel_size=3, stride=1, padding=1)
         )
 
         self.apply(init_weights)
         
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.network(x)
