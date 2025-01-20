@@ -2,6 +2,7 @@ kornia
 matplotlib
 numpy
 pyyaml
+scipy
 torch
 torchvision
 tqdm
