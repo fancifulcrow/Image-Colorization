@@ -23,10 +23,11 @@ The generator implements a U-Net architecture with skip connections between enco
 The discriminator uses a PatchGAN design that classifies N×N patches as real or fake, rather than evaluating the entire image at once. This patch-based approach improves the quality of local textures and color transitions. The discriminator compares the generated colorization against real color images during training.
 
 ## Results
-
 <p align="center">
 <img src="images/results.png">
 </p>
+
+You can download the model weights [here](https://github.com/fancifulcrow/Image-Colorization/releases/tag/v0.11).
 
 ## References
 
