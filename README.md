@@ -10,7 +10,7 @@ pip install -r requirements.txt
 ```
 
 ## Data
-The model trains on the Flowers102 dataset, which provides high-quality flower images with diverse colors and patterns. While the dataset includes class labels, we don't use them since our colorization process is independent of flower species.
+The model trains on the Flowers102 dataset, which provides high-quality flower images with diverse colors and patterns. While the dataset includes class labels, we do not use them since our colorization process is independent of flower species.
 
 We chose to work in the CIELAB color space over RGB for three key advantages: it separates brightness (L\*) from color (a\* and b\*), reduces the prediction space from three channels to two, and provides perceptually uniform color representation. This makes the training process more efficient and produces better results.
 
